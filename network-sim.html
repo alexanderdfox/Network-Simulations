@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Transformer Network Simulator</title>
+<style>
+  body {
+	margin: 0;
+	background: #0a0a0a;
+	color: #fff;
+	font-family: sans-serif;
+	overflow: hidden;
+  }
+  canvas {
+	display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script>
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+// --------------------
+// Node Definitions
+// --------------------
+class Node {
+  constructor(x, y, type, name) {
+	this.x = x;
+	this.y = y;
+	this.type = type; // computer, router, hub
+	this.name = name;
+	this.links = [];
+  }
+
+  send(packet) {
+	this.links.forEach(link => {
+	  if (link.from === this && link.oneWay !== "in") {
+		link.transmit(packet);
+	  }
+	});
+  }
+}
+
+// --------------------
+// Link (Diode)
+// --------------------
+class Link {
+  constructor(from, to, oneWay = "none") {
+	this.from = from;
+	this.to = to;
+	this.oneWay = oneWay; // "forward", "backward", "none"
+	this.packets = [];
+  }
+
+  transmit(packet) {
+	this.packets.push({
+	  packet,
+	  progress: 0
+	});
+  }
+
+  update() {
+	this.packets.forEach(p => {
+	  p.progress += 0.01;
+	  if (p.progress >= 1) {
+		this.to.receive(p.packet);
+	  }
+	});
+	this.packets = this.packets.filter(p => p.progress < 1);
+  }
+
+  draw() {
+	ctx.strokeStyle = "#555";
+	ctx.beginPath();
+	ctx.moveTo(this.from.x, this.from.y);
+	ctx.lineTo(this.to.x, this.to.y);
+	ctx.stroke();
+
+	// direction arrow
+	if (this.oneWay !== "none") {
+	  const mx = (this.from.x + this.to.x)/2;
+	  const my = (this.from.y + this.to.y)/2;
+	  ctx.fillStyle = "red";
+	  ctx.fillText("→", mx, my);
+	}
+
+	// packets
+	this.packets.forEach(p => {
+	  const x = this.from.x + (this.to.x - this.from.x) * p.progress;
+	  const y = this.from.y + (this.to.y - this.from.y) * p.progress;
+	  ctx.fillStyle = "cyan";
+	  ctx.beginPath();
+	  ctx.arc(x, y, 4, 0, Math.PI*2);
+	  ctx.fill();
+	});
+  }
+}
+
+// --------------------
+// Packet
+// --------------------
+class Packet {
+  constructor(source, data) {
+	this.source = source;
+	this.data = data;
+  }
+}
+
+// --------------------
+// Extend Node behavior
+// --------------------
+Node.prototype.receive = function(packet) {
+  if (this.type === "router") {
+	// simple routing logic
+	if (Math.random() > 0.3) {
+	  this.send(packet);
+	}
+  } else if (this.type === "hub") {
+	// broadcast (transformer behavior)
+	this.send(packet);
+  } else if (this.type === "computer") {
+	// endpoint
+	console.log(`${this.name} received:`, packet.data);
+  }
+};
+
+// --------------------
+// Create Topology
+// --------------------
+const nodes = [];
+const links = [];
+
+// Left computers
+const c1 = new Node(100, 200, "computer", "Osc-A");
+const c2 = new Node(100, 400, "computer", "Osc-B");
+
+// Right computers
+const c3 = new Node(canvas.width - 100, 200, "computer", "Osc-C");
+const c4 = new Node(canvas.width - 100, 400, "computer", "Osc-D");
+
+// Routers (switches)
+const r1 = new Node(300, 300, "router", "Router-L");
+const r2 = new Node(canvas.width - 300, 300, "router", "Router-R");
+
+// Transformer hub
+const hub = new Node(canvas.width/2, 300, "hub", "Transformer");
+
+// Register nodes
+nodes.push(c1, c2, c3, c4, r1, r2, hub);
+
+// Helper to link
+function connect(a, b, oneWay="none") {
+  const link = new Link(a, b, oneWay);
+  a.links.push(link);
+  links.push(link);
+}
+
+// Left side
+connect(c1, r1, "forward");
+connect(c2, r1, "forward");
+
+// Right side
+connect(c3, r2, "forward");
+connect(c4, r2, "forward");
+
+// Through transformer (isolated bridge)
+connect(r1, hub, "forward");
+connect(hub, r2, "forward");
+
+// --------------------
+// Packet Generation
+// --------------------
+setInterval(() => {
+  const sources = [c1, c2, c3, c4];
+  const src = sources[Math.floor(Math.random()*sources.length)];
+  const packet = new Packet(src.name, "freq:" + (600 + Math.random()*100));
+  src.send(packet);
+}, 1000);
+
+// --------------------
+// Render Loop
+// --------------------
+function loop() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  links.forEach(l => {
+	l.update();
+	l.draw();
+  });
+
+  nodes.forEach(n => {
+	ctx.fillStyle =
+	  n.type === "computer" ? "#0f0" :
+	  n.type === "router" ? "#ff0" :
+	  "#0ff";
+
+	ctx.beginPath();
+	ctx.arc(n.x, n.y, 10, 0, Math.PI*2);
+	ctx.fill();
+
+	ctx.fillStyle = "#fff";
+	ctx.fillText(n.name, n.x - 30, n.y - 15);
+  });
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
